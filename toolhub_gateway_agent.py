@@ -16,11 +16,12 @@ DEFAULT_SYSTEM_PROMPT = (
     '你的目标是先使用可用工具获得可验证信息，再给出结论。\n'
     '规则:\n'
     '1. 对最新信息先用 web_search，再按需用 web_fetch 或 web_extractor 抓取正文。\n'
-    '2. 允许使用 filesystem 但仅限只读能力 list/read，禁止任何写入、删除或创建操作。\n'
-    '3. 禁止执行本机命令、禁止运行代码、禁止写入记忆或任务文件。\n'
-    '4. 图片问题先看整图，细节再用 image_zoom_in_tool，bbox_2d 使用 0 到 1000 相对坐标。\n'
-    '5. 工具失败时必须明确说明失败原因，不得伪造结果。\n'
-    '6. 联网任务要控制上下文预算，优先少量高质量来源，避免搬运大段无关正文。\n'
+    '2. 对人名、作品名、小众概念等不确定知识先 web_search，若结果歧义则改写关键词再检索一次。\n'
+    '3. 允许使用 filesystem 但仅限只读能力 list/read，禁止任何写入、删除或创建操作。\n'
+    '4. 禁止执行本机命令、禁止运行代码、禁止写入记忆或任务文件。\n'
+    '5. 图片问题先看整图，细节再用 image_zoom_in_tool，bbox_2d 使用 0 到 1000 相对坐标。\n'
+    '6. 工具失败时必须明确说明失败原因，不得伪造结果。\n'
+    '7. 联网任务要控制上下文预算，优先少量高质量来源，避免搬运大段无关正文。\n'
 )
 
 DEFAULT_FUNCTION_LIST = [
@@ -33,12 +34,35 @@ DEFAULT_FUNCTION_LIST = [
     'read_memory',
 ]
 TIMINGS_EMIT_INTERVAL_SEC = 0.8
+MAX_FALLBACK_PART_TEXT_CHARS = 512
 
 
 def fetch_model_id(model_server: str, timeout_sec: int) -> str:
     response = requests.get(f'{model_server}/models', timeout=timeout_sec)
     response.raise_for_status()
     return response.json()['data'][0]['id']
+
+
+def _extract_image_uri(part: Dict[str, Any]) -> Optional[str]:
+    keys = ('image_url', 'image', 'url', 'input_image', 'image_uri')
+    for key in keys:
+        value = part.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            nested = value.get('url') or value.get('image_url') or value.get('image')
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+    return None
+
+
+def _build_compact_part_text(part: Dict[str, Any], part_type: Any) -> str:
+    part_keys = sorted(str(k) for k in part.keys())
+    payload = {'type': str(part_type or 'unknown'), 'keys': part_keys[:12]}
+    text = part.get('text')
+    if isinstance(text, str) and text.strip():
+        payload['text'] = text.strip()[:MAX_FALLBACK_PART_TEXT_CHARS]
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def extract_generate_cfg(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -89,6 +113,7 @@ def build_agent(
         'model': model_id,
         'model_server': model_server,
         'api_key': os.getenv('OPENAI_API_KEY', 'EMPTY'),
+        'model_type': 'qwenvl_oai',
         'generate_cfg': generate_cfg,
     }
     return Assistant(
@@ -117,14 +142,11 @@ def to_content_items(content: Any) -> Union[str, List[ContentItem]]:
             if text:
                 items.append(ContentItem(text=str(text)))
             continue
-        if part_type in ('image_url', 'input_image', 'image'):
-            image = part.get('image_url') or part.get('image') or part.get('url')
-            if isinstance(image, dict):
-                image = image.get('url')
-            if image:
-                items.append(ContentItem(image=str(image)))
+        image_uri = _extract_image_uri(part)
+        if image_uri:
+            items.append(ContentItem(image=image_uri))
             continue
-        items.append(ContentItem(text=json.dumps(part, ensure_ascii=False)))
+        items.append(ContentItem(text=_build_compact_part_text(part, part_type)))
     return items if items else ''
 
 

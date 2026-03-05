@@ -1,6 +1,7 @@
 import math
 import os
 import uuid
+import base64
 from io import BytesIO
 from pathlib import Path
 from typing import List, Tuple, Union
@@ -31,13 +32,32 @@ def _normalize_local_path(path_or_uri: str) -> str:
     return str(Path(raw).expanduser().resolve())
 
 
+def _is_image_data_uri(image_ref: str) -> bool:
+    return image_ref.strip().lower().startswith('data:image')
+
+
+def _load_data_uri_image(image_ref: str) -> Image.Image:
+    try:
+        header, encoded = image_ref.split(',', 1)
+    except ValueError as exc:
+        raise ValueError('data URI 格式错误') from exc
+    if ';base64' not in header.lower():
+        raise ValueError('仅支持 base64 图片 data URI')
+    decoded = base64.b64decode(encoded)
+    return Image.open(BytesIO(decoded)).convert('RGB')
+
+
 def _resolve_image_reference(image_ref: str) -> str:
+    if _is_image_data_uri(image_ref):
+        return image_ref
     if image_ref.startswith('http://') or image_ref.startswith('https://'):
         return image_ref
     return resolve_original_image(image_ref)
 
 
 def _load_image(image_ref: str, work_dir: str) -> Image.Image:
+    if _is_image_data_uri(image_ref):
+        return _load_data_uri_image(image_ref)
     if image_ref.startswith('http://') or image_ref.startswith('https://'):
         response = requests.get(image_ref, timeout=HTTP_TIMEOUT_SEC)
         response.raise_for_status()
