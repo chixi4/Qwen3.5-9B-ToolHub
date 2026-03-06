@@ -129,7 +129,7 @@ BACKEND_PORT=8081
 
 # 推理参数
 THINK_MODE=think-on
-CTX_SIZE=262144
+CTX_SIZE=16384
 IMAGE_MIN_TOKENS=256
 IMAGE_MAX_TOKENS=1024
 MMPROJ_OFFLOAD=off
@@ -234,7 +234,7 @@ $env:MMPROJ_OFFLOAD = 'off';    .\start_8080_toolhub_stack.cmd restart
 ## 限制
 
 * 网关模式下文件系统为只读（可以自行配置为更多权限，后果自负）
-* 默认上下文窗口 256K
+* 默认上下文窗口 16K
 
 ## 致谢
 
