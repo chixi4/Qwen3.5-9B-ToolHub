@@ -7,6 +7,11 @@ $ProgressPreference = 'SilentlyContinue'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = (Resolve-Path $ScriptDir).Path
+$EnvConfig = Join-Path $RootDir 'env_config.ps1'
+if (Test-Path $EnvConfig) {
+    . $EnvConfig
+    Import-EnvFile -Path (Join-Path $RootDir '.env')
+}
 $PythonBin = Join-Path $RootDir '.venv-qwen35\Scripts\python.exe'
 $GatewayRun = Join-Path $RootDir 'run_8080_toolhub_gateway.py'
 $RuntimeDir = Join-Path $RootDir '.tmp\toolhub_gateway'
