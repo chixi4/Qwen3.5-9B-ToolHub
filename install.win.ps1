@@ -33,6 +33,19 @@ function Write-Step {
     Write-Host "[install] $Message"
 }
 
+function New-PythonCandidate {
+    param(
+        [string]$Label,
+        [string]$Command,
+        [string[]]$Args = @()
+    )
+    return [PSCustomObject]@{
+        Label = $Label
+        Command = $Command
+        Args = $Args
+    }
+}
+
 function Format-MiB {
     param([long]$Bytes)
     if ($Bytes -lt 0) {
@@ -61,31 +74,84 @@ function Write-DownloadProgress {
     Write-Host -NoNewline "`r[install] $Label $frame 已下载 $doneOnly MiB"
 }
 
-function Get-PythonExe {
-    if ($env:PYTHON_BIN -and (Test-Path $env:PYTHON_BIN)) {
-        return $env:PYTHON_BIN
+function Get-PythonCandidates {
+    $candidates = @()
+    if ($env:PYTHON_BIN) {
+        $candidates += New-PythonCandidate -Label "PYTHON_BIN=$($env:PYTHON_BIN)" -Command $env:PYTHON_BIN
     }
-    $pyCmd = Get-Command py.exe -ErrorAction SilentlyContinue
-    if ($pyCmd) {
-        return 'py -3'
+    $candidates += New-PythonCandidate -Label 'py -3' -Command 'py' -Args @('-3')
+    $candidates += New-PythonCandidate -Label 'python' -Command 'python'
+    $candidates += New-PythonCandidate -Label 'python3' -Command 'python3'
+    return $candidates
+}
+
+function Test-PythonCandidate {
+    param([object]$PythonSpec)
+    $probeCode = 'import sys, venv; raise SystemExit(0 if sys.version_info >= (3, 10) else 3)'
+    try {
+        & $PythonSpec.Command @($PythonSpec.Args + @('-c', $probeCode)) *> $null
+    } catch {
+        Write-Step "跳过 Python 候选 $($PythonSpec.Label): $($_.Exception.Message)"
+        return $false
     }
-    $pythonCmd = Get-Command python.exe -ErrorAction SilentlyContinue
-    if ($pythonCmd) {
-        return 'python'
+    if ($LASTEXITCODE -eq 0) {
+        return $true
     }
-    throw '未找到可用 Python，请安装 Python 3.10+ 并加入 PATH。'
+    if ($LASTEXITCODE -eq 3) {
+        Write-Step "跳过 Python 候选 $($PythonSpec.Label): Python 版本低于 3.10"
+        return $false
+    }
+    Write-Step "跳过 Python 候选 $($PythonSpec.Label): 解释器不可用或缺少 venv 模块，exit code: $LASTEXITCODE"
+    return $false
+}
+
+function Resolve-PythonSpec {
+    foreach ($candidate in Get-PythonCandidates) {
+        if (Test-PythonCandidate -PythonSpec $candidate) {
+            Write-Step "使用 Python: $($candidate.Label)"
+            return $candidate
+        }
+    }
+    throw '未找到可用 Python，请安装 Python 3.10+ 并确保 venv 模块可用。'
+}
+
+function Invoke-CommandChecked {
+    param(
+        [string]$Command,
+        [string[]]$Args,
+        [string]$Action,
+        [string]$DisplayName = $Command
+    )
+    try {
+        & $Command @Args
+    } catch {
+        throw "$Action 失败。命令: $DisplayName。错误: $($_.Exception.Message)"
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Action 失败。命令: $DisplayName。exit code: $LASTEXITCODE"
+    }
 }
 
 function Invoke-Python {
     param(
-        [string]$PythonSpec,
-        [string[]]$PythonArgs
+        [object]$PythonSpec,
+        [string[]]$PythonArgs,
+        [string]$Action
     )
-    if ($PythonSpec -eq 'py -3') {
-        & py -3 @PythonArgs
-        return
+    Invoke-CommandChecked -Command $PythonSpec.Command -Args ($PythonSpec.Args + $PythonArgs) -Action $Action -DisplayName $PythonSpec.Label
+}
+
+function Test-VenvPython {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) {
+        return $false
     }
-    & $PythonSpec @PythonArgs
+    try {
+        & $Path '-c' 'import sys' *> $null
+    } catch {
+        return $false
+    }
+    return $LASTEXITCODE -eq 0
 }
 
 function Ensure-Dir {
@@ -301,29 +367,27 @@ function Clear-LlamaRuntimeDirectory {
 }
 
 function Ensure-PythonEnv {
-    $python = Get-PythonExe
+    $python = Resolve-PythonSpec
     $venvExists = Test-Path $VenvDir
-    $venvPythonExists = Test-Path $VenvPython
-    if ($venvExists -and -not $venvPythonExists) {
-        Write-Step "检测到非 Windows 虚拟环境，重建: $VenvDir"
+    $venvReady = Test-VenvPython -Path $VenvPython
+    if ($venvExists -and -not $venvReady) {
+        Write-Step "检测到不完整或非 Windows 虚拟环境，重建: $VenvDir"
         Remove-Item -Path $VenvDir -Recurse -Force -ErrorAction SilentlyContinue
         if (Test-Path $VenvDir) {
             Write-Step '目录无法直接删除，尝试 venv --clear 重建'
-            Invoke-Python -PythonSpec $python -PythonArgs @('-m', 'venv', '--clear', $VenvDir)
+            Invoke-Python -PythonSpec $python -PythonArgs @('-m', 'venv', '--clear', $VenvDir) -Action '清空并重建虚拟环境'
         }
-        $venvExists = Test-Path $VenvDir
-        $venvPythonExists = Test-Path $VenvPython
     }
-    if (-not $venvExists) {
+    if (-not (Test-Path $VenvDir)) {
         Write-Step "创建虚拟环境: $VenvDir"
-        Invoke-Python -PythonSpec $python -PythonArgs @('-m', 'venv', $VenvDir)
+        Invoke-Python -PythonSpec $python -PythonArgs @('-m', 'venv', $VenvDir) -Action '创建虚拟环境'
     }
-    if (-not (Test-Path $VenvPython)) {
-        throw "虚拟环境 Python 不存在: $VenvPython"
+    if (-not (Test-VenvPython -Path $VenvPython)) {
+        throw "虚拟环境未就绪: $VenvPython。请检查上面的 Python 或权限报错。"
     }
     Write-Step '安装 Python 依赖'
-    & $VenvPython -m pip install --upgrade pip wheel
-    & $VenvPython -m pip install -r (Join-Path $RootDir 'requirements.txt')
+    Invoke-CommandChecked -Command $VenvPython -Args @('-m', 'pip', 'install', '--upgrade', 'pip', 'wheel') -Action '升级 pip 和 wheel'
+    Invoke-CommandChecked -Command $VenvPython -Args @('-m', 'pip', 'install', '-r', (Join-Path $RootDir 'requirements.txt')) -Action '安装 requirements.txt 依赖'
 }
 
 function Ensure-LlamaRuntime {

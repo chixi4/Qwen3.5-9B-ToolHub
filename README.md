@@ -129,7 +129,7 @@ BACKEND_PORT=8081
 
 # 推理参数
 THINK_MODE=think-on
-CTX_SIZE=16384
+CTX_SIZE=262144
 IMAGE_MIN_TOKENS=256
 IMAGE_MAX_TOKENS=1024
 MMPROJ_OFFLOAD=off
@@ -196,13 +196,13 @@ $env:MMPROJ_OFFLOAD = 'off';    .\start_8080_toolhub_stack.cmd restart
 
 ## WSL
 
-适合已有 WSL 用户：
+适合已有 WSL 用户。WSL 入口会直接复用 Windows 安装和启动主链路，不再单独创建 Linux 虚拟环境：
 
 ```powershell
 .\install.cmd -Wsl
 ```
 
-WSL 内可使用：
+如果你已经在 WSL shell 里，也可以直接执行：
 
 ```bash
 ./install.sh
@@ -217,7 +217,7 @@ WSL 内可使用：
 ├── install.cmd                       # Windows 安装入口（免策略拦截）
 ├── install.ps1                       # 安装分发器（默认 Win，可选 WSL）
 ├── install.win.ps1                   # Windows 安装脚本（主流程）
-├── install.sh                        # WSL 安装脚本
+├── install.sh                        # WSL 兼容安装入口，转调 Windows 主流程
 ├── start_8080_toolhub_stack.cmd      # Windows 服务启停入口（免策略拦截）
 ├── start_8080_toolhub_stack.ps1      # Windows 服务启停管理（主流程）
 ├── switch_qwen35_webui.ps1           # Windows 模型后端控制（主流程）
@@ -234,7 +234,7 @@ WSL 内可使用：
 ## 限制
 
 * 网关模式下文件系统为只读（可以自行配置为更多权限，后果自负）
-* 默认上下文窗口 16K
+* 默认上下文窗口 256K
 
 ## 致谢
 

@@ -43,6 +43,8 @@
 
 ## 6. 需要走 WSL 兼容流程
 
+WSL 入口会直接复用 Windows 安装和启动链路，不会再单独创建 Linux 虚拟环境。
+
 ```powershell
 .\install.cmd -Wsl
 ```
@@ -50,6 +52,7 @@
 然后在 WSL 内执行：
 
 ```bash
+./install.sh
 ./start_8080_toolhub_stack.sh start
 ```
 
