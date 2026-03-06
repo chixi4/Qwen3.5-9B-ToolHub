@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Union
+from typing import Iterable, Union
 
 from qwen_agent.tools.base import BaseTool, register_tool
 
@@ -12,20 +12,42 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _resolve_root() -> Path:
-    root = os.getenv('READONLY_FS_ROOT', str(_project_root()))
-    return Path(os.path.expanduser(root)).resolve()
+def _split_root_items(raw: str) -> list[str]:
+    if not raw.strip():
+        return []
+    return [item.strip() for item in raw.split(os.pathsep) if item.strip()]
+
+
+def _resolve_roots() -> tuple[Path, ...]:
+    roots_value = os.getenv('READONLY_FS_ROOTS', '')
+    root_items = _split_root_items(roots_value)
+    if not root_items:
+        legacy_root = os.getenv('READONLY_FS_ROOT', '')
+        if legacy_root.strip():
+            root_items = [legacy_root.strip()]
+    if not root_items:
+        root_items = [str(_project_root())]
+    return tuple(Path(os.path.expanduser(item)).resolve() for item in root_items)
 
 
 def _resolve_target(raw_path: str) -> Path:
     return Path(os.path.expanduser(raw_path)).resolve()
 
 
-def _ensure_within_root(target: Path, root: Path) -> None:
+def _is_within_root(target: Path, root: Path) -> bool:
     try:
         target.relative_to(root)
-    except ValueError as exc:
-        raise PermissionError(f'只允许访问根目录 {root} 内的路径，拒绝: {target}') from exc
+        return True
+    except ValueError:
+        return False
+
+
+def _ensure_within_roots(target: Path, roots: Iterable[Path]) -> None:
+    allowed_roots = tuple(roots)
+    if any(_is_within_root(target, root) for root in allowed_roots):
+        return
+    allowed_text = ', '.join(str(root) for root in allowed_roots)
+    raise PermissionError(f'只允许访问这些根目录内的路径: {allowed_text}；拒绝: {target}')
 
 
 @register_tool('filesystem', allow_overwrite=True)
@@ -52,9 +74,9 @@ class ReadOnlyFilesystemTool(BaseTool):
         if operation not in {'list', 'read'}:
             raise PermissionError(f'只读策略已启用，禁止 operation={operation}')
 
-        root = _resolve_root()
+        roots = _resolve_roots()
         target = _resolve_target(str(params['path']))
-        _ensure_within_root(target, root)
+        _ensure_within_roots(target, roots)
         if operation == 'list':
             return self._list_path(target)
         return self._read_file(target)

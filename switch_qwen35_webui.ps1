@@ -8,6 +8,11 @@ $ProgressPreference = 'SilentlyContinue'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = (Resolve-Path $ScriptDir).Path
+$EnvConfig = Join-Path $RootDir 'env_config.ps1'
+if (Test-Path $EnvConfig) {
+    . $EnvConfig
+    Import-EnvFile -Path (Join-Path $RootDir '.env')
+}
 $BinPath = if ($env:BIN_PATH) { $env:BIN_PATH } else { Join-Path $RootDir '.tmp\llama_win_cuda\llama-server.exe' }
 $HostAddr = if ($env:HOST) { $env:HOST } else { '127.0.0.1' }
 $PortNum = if ($env:PORT) { $env:PORT } else { '8081' }

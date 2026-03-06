@@ -120,9 +120,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 
 ## 配置说明
 
-复制 `.env.example` 为 `.env`，按需修改：
+复制 `.env.example` 为 `.env`，启动脚本会在运行时自动加载，按需修改：
 
-```bash
+```dotenv
 # 端口
 GATEWAY_PORT=8080
 BACKEND_PORT=8081
@@ -133,7 +133,13 @@ CTX_SIZE=16384
 IMAGE_MIN_TOKENS=256
 IMAGE_MAX_TOKENS=1024
 MMPROJ_OFFLOAD=off
+
+# 文件系统只读范围
+READONLY_FS_ROOTS=  # 留空时默认只允许读取项目目录；多个目录用分号分隔，例如 D:\docs;D:\projects
+READONLY_FS_MAX_READ_BYTES=524288  # 单次读取上限，默认 512KB
 ```
+
+修改后执行 `.\start_8080_toolhub_stack.cmd restart`。
 
 ### 思考模式切换
 
