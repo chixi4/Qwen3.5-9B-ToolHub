@@ -47,21 +47,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 * 下载 llama.cpp CUDA 运行时 `llama-server.exe`
 * 下载 Qwen3.5-9B Q4_K_M 主模型与 mmproj 视觉投影模型
 
-如果你想直接切到 Q8 量化，不用手工改 `.env`，可以执行下面任一入口：
+若你的显存 ≥ 12 GB，可以尝试 Q8 量化，执行下面任一入口
+会自动把 `.env` 里的主模型路径和下载地址切到 Q8，然后开始下载：
 
 ```powershell
 bootstrap_q8.bat
 .\install_q8.cmd
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install_q8.ps1
 ```
-
-其中：
-
-* `bootstrap_q8.bat` 适合直接双击
-* `.\install_q8.cmd` 适合命令行执行
-* `install_q8.ps1` 适合显式 PowerShell 调用
-
-三个入口都会自动把 `.env` 里的主模型路径和下载地址切到 Q8，然后复用同一套安装流程开始下载。
 
 ### 2. 启动服务
 
