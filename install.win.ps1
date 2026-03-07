@@ -118,12 +118,12 @@ function Resolve-PythonSpec {
 function Invoke-CommandChecked {
     param(
         [string]$Command,
-        [string[]]$Args,
+        [string[]]$CommandArgs,
         [string]$Action,
         [string]$DisplayName = $Command
     )
     try {
-        & $Command @Args
+        & $Command @CommandArgs
     } catch {
         throw "$Action 失败。命令: $DisplayName。错误: $($_.Exception.Message)"
     }
@@ -138,7 +138,7 @@ function Invoke-Python {
         [string[]]$PythonArgs,
         [string]$Action
     )
-    Invoke-CommandChecked -Command $PythonSpec.Command -Args ($PythonSpec.Args + $PythonArgs) -Action $Action -DisplayName $PythonSpec.Label
+    Invoke-CommandChecked -Command $PythonSpec.Command -CommandArgs ($PythonSpec.Args + $PythonArgs) -Action $Action -DisplayName $PythonSpec.Label
 }
 
 function Test-VenvPython {
@@ -386,8 +386,8 @@ function Ensure-PythonEnv {
         throw "虚拟环境未就绪: $VenvPython。请检查上面的 Python 或权限报错。"
     }
     Write-Step '安装 Python 依赖'
-    Invoke-CommandChecked -Command $VenvPython -Args @('-m', 'pip', 'install', '--upgrade', 'pip', 'wheel') -Action '升级 pip 和 wheel'
-    Invoke-CommandChecked -Command $VenvPython -Args @('-m', 'pip', 'install', '-r', (Join-Path $RootDir 'requirements.txt')) -Action '安装 requirements.txt 依赖'
+    Invoke-CommandChecked -Command $VenvPython -CommandArgs @('-m', 'pip', 'install', '--upgrade', 'pip', 'wheel') -Action '升级 pip 和 wheel'
+    Invoke-CommandChecked -Command $VenvPython -CommandArgs @('-m', 'pip', 'install', '-r', (Join-Path $RootDir 'requirements.txt')) -Action '安装 requirements.txt 依赖'
 }
 
 function Ensure-LlamaRuntime {
