@@ -47,6 +47,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 * 下载 llama.cpp CUDA 运行时 `llama-server.exe`
 * 下载 Qwen3.5-9B Q4_K_M 主模型与 mmproj 视觉投影模型
 
+如果你想直接切到 Q8 量化，不用手工改 `.env`，可以执行下面任一入口：
+
+```powershell
+bootstrap_q8.bat
+.\install_q8.cmd
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install_q8.ps1
+```
+
+其中：
+
+* `bootstrap_q8.bat` 适合直接双击
+* `.\install_q8.cmd` 适合命令行执行
+* `install_q8.ps1` 适合显式 PowerShell 调用
+
+三个入口都会自动把 `.env` 里的主模型路径和下载地址切到 Q8，然后复用同一套安装流程开始下载。
+
 ### 2. 启动服务
 
 ```powershell
@@ -137,9 +153,29 @@ MMPROJ_OFFLOAD=off
 # 文件系统只读范围
 READONLY_FS_ROOTS=  # 留空时默认只允许读取项目目录；多个目录用分号分隔，例如 D:\docs;D:\projects
 READONLY_FS_MAX_READ_BYTES=524288  # 单次读取上限，默认 512KB
+
+# 模型路径
+MODEL_PATH=.tmp/models/crossrepo/lmstudio-community__Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf
+MMPROJ_PATH=.tmp/models/crossrepo/lmstudio-community__Qwen3.5-9B-GGUF/mmproj-Qwen3.5-9B-BF16.gguf
 ```
 
 修改后执行 `.\start_8080_toolhub_stack.cmd restart`。
+
+### 一键切到 Q8
+
+```powershell
+bootstrap_q8.bat
+.\install_q8.cmd
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install_q8.ps1
+```
+
+执行后会完成三件事：
+
+* 若 `.env` 不存在，先从 `.env.example` 生成
+* 把 `MODEL_PATH` 改成 `Qwen3.5-9B-Q8_0.gguf`
+* 把 `MODEL_GGUF_URL` 改成 Q8 下载地址，并继续执行安装脚本
+
+`mmproj` 不需要更换，仍然使用 `mmproj-Qwen3.5-9B-BF16.gguf`。
 
 ### 思考模式切换
 
@@ -189,7 +225,7 @@ curl http://127.0.0.1:8080/v1/chat/completions \
 
 检查以下文件：
 
-* `.tmp\models\crossrepo\lmstudio-community__Qwen3.5-9B-GGUF\Qwen3.5-9B-Q4_K_M.gguf`
+* `.env` 里的 `MODEL_PATH` 指向的主模型文件，例如 `.tmp\models\crossrepo\lmstudio-community__Qwen3.5-9B-GGUF\Qwen3.5-9B-Q4_K_M.gguf` 或 `.tmp\models\crossrepo\lmstudio-community__Qwen3.5-9B-GGUF\Qwen3.5-9B-Q8_0.gguf`
 * `.tmp\models\crossrepo\lmstudio-community__Qwen3.5-9B-GGUF\mmproj-Qwen3.5-9B-BF16.gguf`
 
 ### 显存不足
@@ -220,9 +256,12 @@ $env:MMPROJ_OFFLOAD = 'off';    .\start_8080_toolhub_stack.cmd restart
 ```
 .
 ├── bootstrap.bat                     # Windows 一键安装入口
+├── bootstrap_q8.bat                  # Windows 一键切到 Q8，适合直接双击
 ├── install.cmd                       # Windows 安装入口（免策略拦截）
 ├── install.ps1                       # 安装分发器（默认 Win，可选 WSL）
 ├── install.win.ps1                   # Windows 安装脚本（主流程）
+├── install_q8.cmd                    # Windows 一键切到 Q8 并开始下载
+├── install_q8.ps1                    # Windows Q8 配置与安装入口
 ├── install.sh                        # WSL 兼容安装入口，转调 Windows 主流程
 ├── start_8080_toolhub_stack.cmd      # Windows 服务启停入口（免策略拦截）
 ├── start_8080_toolhub_stack.ps1      # Windows 服务启停管理（主流程）

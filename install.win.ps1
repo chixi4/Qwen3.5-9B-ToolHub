@@ -5,12 +5,19 @@ $ProgressPreference = 'SilentlyContinue'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = (Resolve-Path $ScriptDir).Path
+$EnvConfig = Join-Path $RootDir 'env_config.ps1'
+if (Test-Path $EnvConfig) {
+    . $EnvConfig
+    Import-EnvFile -Path (Join-Path $RootDir '.env')
+}
 $VenvDir = Join-Path $RootDir '.venv-qwen35'
 $VenvPython = Join-Path $VenvDir 'Scripts\python.exe'
 $LlamaDir = Join-Path $RootDir '.tmp\llama_win_cuda'
-$ModelDir = Join-Path $RootDir '.tmp\models\crossrepo\lmstudio-community__Qwen3.5-9B-GGUF'
-$GgufPath = Join-Path $ModelDir 'Qwen3.5-9B-Q4_K_M.gguf'
-$MmprojPath = Join-Path $ModelDir 'mmproj-Qwen3.5-9B-BF16.gguf'
+$ModelRelativeDir = '.tmp\models\crossrepo\lmstudio-community__Qwen3.5-9B-GGUF'
+$DefaultGgufRelativePath = Join-Path $ModelRelativeDir 'Qwen3.5-9B-Q4_K_M.gguf'
+$DefaultMmprojRelativePath = Join-Path $ModelRelativeDir 'mmproj-Qwen3.5-9B-BF16.gguf'
+$GgufPath = Resolve-ManagedPath -BaseDir $RootDir -Value $env:MODEL_PATH -DefaultRelativePath $DefaultGgufRelativePath
+$MmprojPath = Resolve-ManagedPath -BaseDir $RootDir -Value $env:MMPROJ_PATH -DefaultRelativePath $DefaultMmprojRelativePath
 
 $DefaultGgufUrl = 'https://huggingface.co/lmstudio-community/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf'
 $DefaultMmprojUrl = 'https://huggingface.co/lmstudio-community/Qwen3.5-9B-GGUF/resolve/main/mmproj-Qwen3.5-9B-BF16.gguf'
@@ -171,10 +178,7 @@ function Download-File {
     if (-not [string]::IsNullOrWhiteSpace($targetDir)) {
         Ensure-Dir $targetDir
     }
-    $tempFile = "$OutFile.part"
-    if (Test-Path $tempFile) {
-        Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
-    }
+    $tempFile = '{0}.part.{1}.{2}' -f $OutFile, $PID, ([guid]::NewGuid().ToString('N'))
 
     $response = $null
     $inStream = $null
@@ -434,10 +438,13 @@ function Ensure-LlamaRuntime {
 }
 
 function Ensure-ModelFiles {
-    Ensure-Dir $ModelDir
+    Ensure-Dir (Split-Path -Parent $GgufPath)
+    Ensure-Dir (Split-Path -Parent $MmprojPath)
 
     $ggufUrl = if ($env:MODEL_GGUF_URL) { $env:MODEL_GGUF_URL } else { $DefaultGgufUrl }
     $mmprojUrl = if ($env:MODEL_MMPROJ_URL) { $env:MODEL_MMPROJ_URL } else { $DefaultMmprojUrl }
+    Write-Step "主模型路径: $GgufPath"
+    Write-Step "视觉模型路径: $MmprojPath"
 
     if (-not (Test-Path $GgufPath)) {
         Download-File -Url $ggufUrl -OutFile $GgufPath

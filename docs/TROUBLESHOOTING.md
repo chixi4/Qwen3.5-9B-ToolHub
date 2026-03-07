@@ -32,7 +32,7 @@
 
 检查下面两个文件是否存在：
 
-- `.tmp\models\crossrepo\lmstudio-community__Qwen3.5-9B-GGUF\Qwen3.5-9B-Q4_K_M.gguf`
+- `.env` 里的 `MODEL_PATH` 指向的主模型文件，默认是 `.tmp\models\crossrepo\lmstudio-community__Qwen3.5-9B-GGUF\Qwen3.5-9B-Q4_K_M.gguf`，执行 `.\install_q8.cmd` 后会变成 `Qwen3.5-9B-Q8_0.gguf`
 - `.tmp\models\crossrepo\lmstudio-community__Qwen3.5-9B-GGUF\mmproj-Qwen3.5-9B-BF16.gguf`
 
 ## 5. 看不到回答下方性能统计
