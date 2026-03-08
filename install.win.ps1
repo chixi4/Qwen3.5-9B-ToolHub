@@ -53,34 +53,6 @@ function New-PythonCandidate {
     }
 }
 
-function Format-MiB {
-    param([long]$Bytes)
-    if ($Bytes -lt 0) {
-        return '0.0'
-    }
-    return ('{0:N1}' -f ($Bytes / 1MB))
-}
-
-function Write-DownloadProgress {
-    param(
-        [string]$Label,
-        [long]$DownloadedBytes,
-        [long]$TotalBytes,
-        [int]$Tick
-    )
-    $frames = @('|', '/', '-', '\')
-    $frame = $frames[$Tick % $frames.Count]
-    if ($TotalBytes -gt 0) {
-        $percent = [math]::Min(100, [int](($DownloadedBytes * 100) / $TotalBytes))
-        $done = Format-MiB -Bytes $DownloadedBytes
-        $total = Format-MiB -Bytes $TotalBytes
-        Write-Host -NoNewline "`r[install] $Label $percent% ($done/$total MiB)"
-        return
-    }
-    $doneOnly = Format-MiB -Bytes $DownloadedBytes
-    Write-Host -NoNewline "`r[install] $Label $frame 已下载 $doneOnly MiB"
-}
-
 function Get-PythonCandidates {
     $candidates = @()
     if ($env:PYTHON_BIN) {
@@ -168,6 +140,14 @@ function Ensure-Dir {
     }
 }
 
+function Resolve-CurlPath {
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+    if (-not $curl) {
+        throw '未找到 curl.exe，无法执行带进度显示的下载。'
+    }
+    return $curl.Source
+}
+
 function Download-File {
     param(
         [string]$Url,
@@ -178,44 +158,28 @@ function Download-File {
     if (-not [string]::IsNullOrWhiteSpace($targetDir)) {
         Ensure-Dir $targetDir
     }
-    $tempFile = '{0}.part.{1}.{2}' -f $OutFile, $PID, ([guid]::NewGuid().ToString('N'))
+    $tempFile = "$OutFile.part"
+    $curlPath = Resolve-CurlPath
+    $curlArgs = @(
+        '--fail',
+        '--location',
+        '--retry', '5',
+        '--retry-delay', '2',
+        '--output', $tempFile
+    )
+    if (Test-Path $tempFile) {
+        Write-Step '检测到未完成下载，继续传输'
+        $curlArgs += @('--continue-at', '-')
+    }
+    $curlArgs += $Url
 
-    $response = $null
-    $inStream = $null
-    $outStream = $null
     try {
-        $request = [System.Net.HttpWebRequest]::Create($Url)
-        $request.AllowAutoRedirect = $true
-        $request.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
-        $response = $request.GetResponse()
-        $totalBytes = [long]$response.ContentLength
-        $inStream = $response.GetResponseStream()
-        $outStream = [System.IO.File]::Open($tempFile, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-
-        $buffer = New-Object byte[] (1MB)
-        $downloadedBytes = [long]0
-        $tick = 0
-        $lastTick = [System.Diagnostics.Stopwatch]::StartNew()
-        while (($read = $inStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-            $outStream.Write($buffer, 0, $read)
-            $downloadedBytes += $read
-            if ($lastTick.ElapsedMilliseconds -ge 250) {
-                Write-DownloadProgress -Label '下载中' -DownloadedBytes $downloadedBytes -TotalBytes $totalBytes -Tick $tick
-                $tick++
-                $lastTick.Restart()
-            }
-        }
-        Write-DownloadProgress -Label '下载中' -DownloadedBytes $downloadedBytes -TotalBytes $totalBytes -Tick $tick
-        Write-Host ''
+        & $curlPath @curlArgs
     } catch {
-        if (Test-Path $tempFile) {
-            Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
-        }
-        throw
-    } finally {
-        if ($outStream) { $outStream.Dispose() }
-        if ($inStream) { $inStream.Dispose() }
-        if ($response) { $response.Dispose() }
+        throw "下载失败。命令: curl.exe。错误: $($_.Exception.Message)"
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "下载失败。命令: curl.exe。exit code: $LASTEXITCODE"
     }
 
     if (Test-Path $OutFile) {

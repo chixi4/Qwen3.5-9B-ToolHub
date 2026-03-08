@@ -28,6 +28,10 @@ to_win_path_if_needed() {
   printf '%s' "$raw"
 }
 
+ps_escape_single_quotes() {
+  printf "%s" "$1" | sed "s/'/''/g"
+}
+
 require_windows_power_shell() {
   if ! command -v powershell.exe >/dev/null 2>&1; then
     echo "未找到 powershell.exe，WSL 兼容入口无法调用 Windows 安装器。"
@@ -55,6 +59,19 @@ build_env_overrides() {
   done
 }
 
+build_ps_env_setup() {
+  local -n env_ref=$1
+  local lines=()
+  local item key value escaped_value
+  for item in "${env_ref[@]}"; do
+    key="${item%%=*}"
+    value="${item#*=}"
+    escaped_value="$(ps_escape_single_quotes "$value")"
+    lines+=("[Environment]::SetEnvironmentVariable('$key', '$escaped_value', 'Process')")
+  done
+  printf '%s; ' "${lines[@]}"
+}
+
 main() {
   if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     print_usage
@@ -69,7 +86,11 @@ main() {
   local env_overrides=()
   build_env_overrides env_overrides
 
-  env "${env_overrides[@]}" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$installer_win"
+  local ps_command
+  local ps_env_setup
+  ps_env_setup="$(build_ps_env_setup env_overrides)"
+  ps_command="[Console]::InputEncoding = [System.Text.UTF8Encoding]::new(\$false); [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(\$false); chcp 65001 > \$null; ${ps_env_setup}& '$installer_win'"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ps_command"
 }
 
 main "$@"
