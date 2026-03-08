@@ -1,0 +1,56 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 8080
+      BACKEND_BASE: http://backend:8081
+      MODEL_SERVER: http://backend:8081/v1
+      BACKEND_WAIT_HINT: docker compose logs -f backend
+      ACCESS_URLS: http://127.0.0.1:${GATEWAY_PORT:-8080}
+      READONLY_FS_ROOTS: /workspace
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - .:/workspace:ro
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/gateway/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8081
+      THINK_MODE: ${THINK_MODE:-think-on}
+      CTX_SIZE: ${CTX_SIZE:-16384}
+      IMAGE_MIN_TOKENS: ${IMAGE_MIN_TOKENS:-256}
+      IMAGE_MAX_TOKENS: ${IMAGE_MAX_TOKENS:-1024}
+      MMPROJ_OFFLOAD: ${MMPROJ_OFFLOAD:-off}
+      MODEL_PATH: /models/model.gguf
+      MMPROJ_PATH: /models/mmproj.gguf
+      MODEL_GGUF_URL: ${MODEL_GGUF_URL:-https://huggingface.co/lmstudio-community/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf}
+      MODEL_MMPROJ_URL: ${MODEL_MMPROJ_URL:-https://huggingface.co/lmstudio-community/Qwen3.5-9B-GGUF/resolve/main/mmproj-Qwen3.5-9B-BF16.gguf}
+      MODEL_GGUF_SHA256: ${MODEL_GGUF_SHA256:-}
+      MODEL_MMPROJ_SHA256: ${MODEL_MMPROJ_SHA256:-}
+    expose:
+      - "8081"
+    volumes:
+      - toolhub-models:/models
+    gpus: all
+    healthcheck:
+      test: ["NONE"]
+
+volumes:
+  toolhub-models:

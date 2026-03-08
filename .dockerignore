@@ -1,0 +1,10 @@
+.git
+.tmp
+.venv*
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.pid
+README.draft.md

@@ -25,6 +25,9 @@ $GatewayPort = if ($env:GATEWAY_PORT) { $env:GATEWAY_PORT } else { '8080' }
 $BackendHost = if ($env:BACKEND_HOST) { $env:BACKEND_HOST } else { '127.0.0.1' }
 $BackendPort = if ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { '8081' }
 $ThinkMode = if ($env:THINK_MODE) { $env:THINK_MODE } else { 'think-on' }
+$BackendWaitHint = '.\start_8080_toolhub_stack.cmd logs'
+$SpinnerFrameIntervalMs = 120
+$SpinnerProbeIntervalMs = 1000
 
 function Ensure-Dir {
     param([string]$Path)
@@ -55,16 +58,29 @@ function Test-GatewayReady {
     }
 }
 
+function Show-GatewayFailureLogs {
+    Write-Host '网关启动失败，最近日志如下:'
+    if (Test-Path $LogFile) {
+        Write-Host '=== 网关标准输出 ==='
+        Get-Content -Path $LogFile -Tail 120 -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $ErrLogFile) {
+        Write-Host '=== 网关标准错误 ==='
+        Get-Content -Path $ErrLogFile -Tail 120 -ErrorAction SilentlyContinue
+    }
+}
+
 function Write-SpinnerLine {
     param(
         [string]$Label,
-        [int]$Current,
+        [double]$Current,
         [int]$Total,
         [int]$Tick
     )
     $frames = @('|', '/', '-', '\')
     $frame = $frames[$Tick % $frames.Count]
-    Write-Host -NoNewline "`r$Label $frame $Current/$Total 秒"
+    $currentText = [string][int][Math]::Floor($Current)
+    Write-Host -NoNewline "`r$Label $frame $currentText/$Total 秒"
 }
 
 function Complete-SpinnerLine {
@@ -97,7 +113,7 @@ function Start-Backend {
         $env:PORT = $BackendPort
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ModelSwitch '9b' $ThinkMode
         if ($LASTEXITCODE -ne 0) {
-            throw "后端启动失败，exit code: $LASTEXITCODE"
+            throw '后端启动失败，请先查看上面的直接原因'
         }
     } finally {
         $env:HOST = $oldHost
@@ -127,23 +143,37 @@ function Start-Gateway {
     if (Test-Path $ErrLogFile) {
         Remove-Item -Path $ErrLogFile -Force -ErrorAction SilentlyContinue
     }
-    $proc = Start-Process -FilePath $PythonBin -ArgumentList $args -RedirectStandardOutput $LogFile -RedirectStandardError $ErrLogFile -PassThru
+    $oldWaitHint = $env:BACKEND_WAIT_HINT
+    try {
+        $env:BACKEND_WAIT_HINT = $BackendWaitHint
+        $proc = Start-Process -FilePath $PythonBin -ArgumentList $args -WindowStyle Hidden -RedirectStandardOutput $LogFile -RedirectStandardError $ErrLogFile -PassThru
+    } finally {
+        $env:BACKEND_WAIT_HINT = $oldWaitHint
+    }
     Set-Content -Path $PidFile -Value $proc.Id -Encoding ascii
 
-    for ($i = 0; $i -lt 60; $i++) {
-        Write-SpinnerLine -Label '网关启动中...' -Current ($i + 1) -Total 60 -Tick $i
-        if ((Test-GatewayRunning) -and (Test-GatewayReady)) {
-            Complete-SpinnerLine
-            return
+    $timeoutSec = 60
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $nextProbeMs = 0
+    $tick = 0
+    while ($stopwatch.Elapsed.TotalSeconds -lt $timeoutSec) {
+        Write-SpinnerLine -Label '网关启动中...' -Current $stopwatch.Elapsed.TotalSeconds -Total $timeoutSec -Tick $tick
+        if ($stopwatch.ElapsedMilliseconds -ge $nextProbeMs) {
+            if (-not (Test-GatewayRunning)) {
+                break
+            }
+            if (Test-GatewayReady) {
+                Complete-SpinnerLine
+                return
+            }
+            $nextProbeMs += $SpinnerProbeIntervalMs
         }
-        Start-Sleep -Seconds 1
+        Start-Sleep -Milliseconds $SpinnerFrameIntervalMs
+        $tick++
     }
     Complete-SpinnerLine
 
-    if (Test-Path $LogFile) {
-        Write-Host '网关启动失败，日志如下:'
-        Get-Content -Path $LogFile -Tail 120
-    }
+    Show-GatewayFailureLogs
     throw '网关启动失败。'
 }
 
@@ -221,14 +251,19 @@ function Stop-Backend {
 }
 
 function Start-Stack {
-    Write-Host '步骤 1/2: 启动模型后端（严格 GPU 校验）'
-    Start-Backend
-    Write-Host '步骤 2/2: 启动网关服务'
-    Start-Gateway
-    Write-Host '栈已启动'
-    Write-Host "前端入口: http://$GatewayHost`:$GatewayPort"
-    Write-Host "模型后端: http://$BackendHost`:$BackendPort"
-    Write-Host '可用状态检查命令: .\start_8080_toolhub_stack.cmd status'
+    try {
+        Write-Host '步骤 1/2: 启动模型后端'
+        Start-Backend
+        Write-Host '步骤 2/2: 启动网关服务'
+        Start-Gateway
+        Write-Host '栈已启动'
+        Write-Host "网页入口: http://$GatewayHost`:$GatewayPort"
+        Write-Host '可用状态检查命令: .\start_8080_toolhub_stack.cmd status'
+        Write-Host '停止命令: .\start_8080_toolhub_stack.cmd stop'
+    } catch {
+        Write-Host $_.Exception.Message
+        exit 1
+    }
 }
 
 function Stop-Stack {
